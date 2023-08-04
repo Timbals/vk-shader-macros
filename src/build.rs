@@ -89,7 +89,7 @@ impl Parse for BuildOptions {
                     input.parse::<Token![:]>()?;
 
                     let name = input.parse::<Ident>()?;
-                    let value = if input.peek(Token![,]) {
+                    let value = if input.peek(Token![,]) || input.is_empty() {
                         None
                     } else {
                         Some(input.parse::<LitStr>()?.value())
