@@ -5,6 +5,9 @@ use std::{env, fs, mem, str};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
+use std::collections::hash_map::DefaultHasher;
+use std::convert::TryInto;
+use std::hash::{Hash, Hasher};
 use syn::parse::{Parse, ParseStream, Result};
 use syn::{Ident, LitInt, LitStr, Token};
 
@@ -36,6 +39,17 @@ pub struct BuildOptions {
     pub target_version: u32,
 
     pub unterminated: bool,
+}
+
+impl Hash for BuildOptions {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.kind.map(|kind| kind as usize).hash(state);
+        self.version.hash(state);
+        self.debug.hash(state);
+        self.definitions.hash(state);
+        (self.optimization as usize).hash(state);
+        self.target_version.hash(state);
+    }
 }
 
 impl Default for BuildOptions {
@@ -154,6 +168,32 @@ impl Builder {
         let path_str = src_path.clone().map(|x| x.to_string_lossy().into_owned());
         let sources = RefCell::new(path_str.map(|x| vec![x]).unwrap_or_else(Vec::new));
 
+        // compute a hash over the source code and the build options
+        let mut hasher = DefaultHasher::new();
+        src.hash(&mut hasher);
+        build_options.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        let path = option_env!("OUT_DIR").map(|out_dir| Path::new(out_dir).join(hash.to_string()));
+
+        if let Some(path) = &path {
+            let data = fs::read(path);
+
+            // check if a cached compilation exists
+            if let Ok(data) = data {
+                assert_eq!(0, data.len() % 4);
+                let spv = data
+                    .chunks_exact(4)
+                    .map(|chunk| u32::from_ne_bytes(chunk.try_into().unwrap()))
+                    .collect::<Vec<_>>();
+
+                return Ok(Output {
+                    sources: sources.into_inner(),
+                    spv,
+                });
+            }
+        }
+
         let mut options = shaderc::CompileOptions::new().unwrap();
         options.set_include_callback(|name, ty, src, _depth| {
             let path = match ty {
@@ -199,6 +239,11 @@ impl Builder {
             return Err(syn::Error::new(src_span, out.get_warning_messages()));
         }
         mem::drop(options);
+
+        if let Some(path) = path {
+            // Write out the compilation result for caching
+            let _ = fs::write(path, out.as_binary_u8());
+        }
 
         Ok(Output {
             sources: sources.into_inner(),
