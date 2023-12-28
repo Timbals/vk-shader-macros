@@ -43,11 +43,11 @@ pub struct BuildOptions {
 
 impl Hash for BuildOptions {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.kind.map(|kind| kind as usize).hash(state);
+        self.kind.map(|kind| mem::discriminant(&kind)).hash(state);
         self.version.hash(state);
         self.debug.hash(state);
         self.definitions.hash(state);
-        (self.optimization as usize).hash(state);
+        mem::discriminant(&self.optimization).hash(state);
         self.target_version.hash(state);
     }
 }
