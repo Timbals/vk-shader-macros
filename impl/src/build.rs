@@ -2,34 +2,17 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::{env, fs, mem, str};
 
-use proc_macro::TokenStream;
-use proc_macro2::Span;
-use quote::quote;
+use anyhow::{bail, Result};
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryInto;
 use std::hash::{Hash, Hasher};
-use syn::parse::{Parse, ParseStream, Result};
-use syn::{Ident, LitInt, LitStr, Token};
 
 pub struct Output {
     pub sources: Vec<String>,
     pub spv: Vec<u32>,
 }
 
-impl Output {
-    pub fn expand(self) -> TokenStream {
-        let Self { sources, spv } = self;
-
-        let expanded = quote! {
-            {
-                #({ const _FORCE_DEP: &[u8] = include_bytes!(#sources); })*
-                &[#(#spv),*]
-            }
-        };
-        TokenStream::from(expanded)
-    }
-}
-
+#[derive(Clone)]
 pub struct BuildOptions {
     pub kind: Option<shaderc::ShaderKind>,
     pub version: Option<u32>,
@@ -70,88 +53,11 @@ impl Default for BuildOptions {
     }
 }
 
-impl Parse for BuildOptions {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let mut out = Self::default();
-
-        while input.peek(Ident) {
-            let key = input.parse::<Ident>()?;
-            match key.to_string().as_str() {
-                "kind" => {
-                    input.parse::<Token![:]>()?;
-
-                    let value = input.parse::<Ident>()?;
-                    if let Some(kind) = extension_kind(&value.to_string()) {
-                        out.kind = Some(kind);
-                    } else {
-                        return Err(syn::Error::new(value.span(), "unknown shader kind"));
-                    }
-                }
-                "version" => {
-                    input.parse::<Token![:]>()?;
-
-                    let value = input.parse::<LitInt>()?;
-                    out.version = Some(value.base10_parse()?);
-                }
-                "strip" => {
-                    out.debug = false;
-                }
-                "debug" => {
-                    out.debug = true;
-                }
-                "define" => {
-                    input.parse::<Token![:]>()?;
-
-                    let name = input.parse::<Ident>()?;
-                    let value = if input.peek(Token![,]) || input.is_empty() {
-                        None
-                    } else {
-                        Some(input.parse::<LitStr>()?.value())
-                    };
-                    out.definitions.push((name.to_string(), value));
-                }
-                "optimize" => {
-                    input.parse::<Token![:]>()?;
-
-                    let value = input.parse::<Ident>()?;
-                    if let Some(level) = optimization_level(&value.to_string()) {
-                        out.optimization = level;
-                    } else {
-                        return Err(syn::Error::new(value.span(), "unknown optimization level"));
-                    }
-                }
-                "target" => {
-                    input.parse::<Token![:]>()?;
-
-                    let value = input.parse::<Ident>()?;
-                    if let Some(version) = target(&value.to_string()) {
-                        out.target_version = version;
-                    } else {
-                        return Err(syn::Error::new(value.span(), "unknown target"));
-                    }
-                }
-                _ => {
-                    return Err(syn::Error::new(key.span(), "unknown shader compile option"));
-                }
-            }
-
-            if input.peek(Token![,]) {
-                input.parse::<Token![,]>()?;
-            } else {
-                out.unterminated = true;
-                break;
-            }
-        }
-
-        Ok(out)
-    }
-}
-
+#[derive(Clone)]
 pub struct Builder {
     pub src: String,
     pub name: String,
     pub path: Option<PathBuf>,
-    pub span: Span,
     pub options: BuildOptions,
 }
 
@@ -161,7 +67,6 @@ impl Builder {
             src,
             name: src_name,
             path: src_path,
-            span: src_span,
             options: build_options,
         } = self;
 
@@ -232,11 +137,9 @@ impl Builder {
             .unwrap_or(shaderc::ShaderKind::InferFromSource);
 
         let compiler = shaderc::Compiler::new().unwrap();
-        let out = compiler
-            .compile_into_spirv(&src, kind, &src_name, "main", Some(&options))
-            .map_err(|e| syn::Error::new(src_span, e))?;
+        let out = compiler.compile_into_spirv(&src, kind, &src_name, "main", Some(&options))?;
         if out.get_num_warnings() != 0 {
-            return Err(syn::Error::new(src_span, out.get_warning_messages()));
+            bail!(out.get_warning_messages());
         }
         mem::drop(options);
 
@@ -252,7 +155,7 @@ impl Builder {
     }
 }
 
-fn extension_kind(ext: &str) -> Option<shaderc::ShaderKind> {
+pub fn extension_kind(ext: &str) -> Option<shaderc::ShaderKind> {
     use shaderc::ShaderKind::*;
     Some(match ext {
         "vert" => Vertex,
@@ -273,23 +176,5 @@ fn extension_kind(ext: &str) -> Option<shaderc::ShaderKind> {
         _ => {
             return None;
         }
-    })
-}
-
-fn optimization_level(level: &str) -> Option<shaderc::OptimizationLevel> {
-    match level {
-        "zero" => Some(shaderc::OptimizationLevel::Zero),
-        "size" => Some(shaderc::OptimizationLevel::Size),
-        "performance" => Some(shaderc::OptimizationLevel::Performance),
-        _ => None,
-    }
-}
-
-fn target(s: &str) -> Option<u32> {
-    Some(match s {
-        "vulkan" | "vulkan1_0" => 1 << 22,
-        "vulkan1_1" => 1 << 22 | 1 << 12,
-        "vulkan1_2" => 1 << 22 | 2 << 12,
-        _ => return None,
     })
 }

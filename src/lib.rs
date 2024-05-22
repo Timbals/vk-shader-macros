@@ -1,130 +1,164 @@
-extern crate proc_macro;
-
-mod build;
-
+use crate::build::extension_kind;
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::borrow::{Cow, ToOwned};
+use std::cell::RefCell;
+use std::ops::Deref;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, SystemTime};
 use std::{env, fs};
+pub use vk_shader_macros_impl::*;
 
-use proc_macro::TokenStream;
-use syn::parse::{Parse, ParseStream, Result};
-use syn::{parse_macro_input, LitStr, Token};
+#[path = "../impl/src/build.rs"]
+pub mod build; // TODO code duplication
 
-use self::build::{BuildOptions, Builder, Output};
+// TODO hide from public API
+pub use shaderc::{OptimizationLevel, ShaderKind};
 
-struct IncludeGlsl(Output);
+static DIRTY: AtomicBool = AtomicBool::new(false);
 
-impl Parse for IncludeGlsl {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let path_lit = input.parse::<LitStr>()?;
-        let path = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join(&path_lit.value());
-        let path_str = path.to_string_lossy();
+/// Returns `true` when any shader has been changed
+/// since the last time this function was called.
+pub fn should_recompile() -> bool {
+    DIRTY.swap(false, Ordering::AcqRel)
+}
 
-        let src = fs::read_to_string(&path).map_err(|e| syn::Error::new(path_lit.span(), e))?;
+pub struct ShaderData {
+    pub inner: Mutex<ShaderDataInner>,
+}
 
-        let options = if input.peek(Token![,]) {
-            input.parse::<Token![,]>()?;
-            input.parse::<BuildOptions>()?
-        } else {
-            BuildOptions::default()
-        };
+pub struct ShaderDataInner {
+    pub compile_time_spv: &'static [u32],
+    /// Latest compiled SPIR-V
+    pub data: Option<Vec<u32>>,
+    /// All paths for dependencies of the shader.
+    /// The second tuple field stores the last file modification.
+    /// Should store a `SystemTime`, but that is an opaque type,
+    /// so store `modified.duration_since(SystemTime::UNIX_EPOCH)`.
+    /// The first entry is always the actual shader,
+    /// and other entries are dependencies.
+    pub paths: &'static [(&'static str, Duration)],
 
-        let builder = Builder {
-            src,
-            name: path_str.into_owned(),
-            path: Some(path),
-            span: path_lit.span(),
-            options,
-        };
-        builder.build().map(Self)
+    pub initialized: bool,
+
+    pub build_options: BuildOptions,
+}
+
+#[derive(Clone)]
+pub struct BuildOptions {
+    pub kind: Option<ShaderKind>,
+    pub version: Option<u32>,
+    pub debug: bool,
+    pub definitions: &'static [(&'static str, Option<&'static str>)],
+    pub optimization: OptimizationLevel,
+    pub target_version: u32,
+}
+
+impl ShaderData {
+    pub fn data(&self) -> impl Deref<Target = [u32]> {
+        self.inner.lock().unwrap().data()
     }
 }
 
-struct Glsl(Output);
+impl ShaderDataInner {
+    fn data(&mut self) -> impl Deref<Target = [u32]> {
+        if !self.initialized {
+            self.initialized = true;
 
-impl Parse for Glsl {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let options = input.parse::<BuildOptions>()?;
+            static WATCHER: Mutex<Option<RecommendedWatcher>> = Mutex::new(None);
+            let mut watcher = WATCHER.lock().unwrap();
+            let watcher = watcher.get_or_insert_with(|| {
+                notify::recommended_watcher(|event: notify::Result<notify::Event>| {
+                    let event = event.unwrap();
+                    if let EventKind::Modify(_) = event.kind {
+                        DIRTY.store(true, Ordering::Release);
+                    }
+                })
+                .unwrap()
+            });
 
-        if options.unterminated {
-            input.parse::<Token![,]>()?;
+            for (path, _) in self.paths.iter() {
+                watcher
+                    .watch(Path::new(path), RecursiveMode::NonRecursive)
+                    .unwrap();
+            }
         }
 
-        let src_lit = input.parse::<LitStr>()?;
-        let src = src_lit.value();
-
-        if input.peek(Token![,]) {
-            input.parse::<Token![,]>()?;
+        if self.paths.iter().any(|(path, modified)| {
+            let modified = SystemTime::UNIX_EPOCH + *modified;
+            fs::metadata(path).unwrap().modified().unwrap() != modified
+        }) {
+            self.compile();
         }
 
-        let builder = Builder {
-            src,
-            name: "inline".to_owned(),
-            path: None,
-            span: src_lit.span(),
-            options,
-        };
-        builder.build().map(Self)
+        match &self.data {
+            Some(data) => Cow::Owned(data.clone()),
+            None => Cow::Borrowed(self.compile_time_spv),
+        }
     }
-}
 
-/// Compile a GLSL source file into a binary SPIR-V constant
-///
-/// ```
-/// use vk_shader_macros::include_glsl;
-/// const VERT: &[u32] = include_glsl!("example.vert");
-/// ```
-///
-/// Due to limitations of proc macros, paths are resolved relative to the crate root.
-///
-/// # Options
-///
-/// Compile options may be specified as additional arguments. Supported options include:
-/// - `kind: <kind>` - Specify shader kind. Valid kinds are the same as the recognized file
-///    extensions: `vert`, `frag`, `comp`, `geom`, `tesc`, `tese`, `spvasm`, `rgen`, `rahit`,
-///    `rchit`, `rmiss`, `rint`, `rcall`, `task`, and `mesh`. If omitted, kind is inferred from the
-///    file's extension, or a pragma in the source.
-/// - `version: <version>` - Specify GLSL version. If omitted, version must be specified in the
-///    source with `#version`
-/// - `strip` - Omit debug info (set as default by enabling the `strip` feature)
-/// - `debug` - Force debug info, even with the `strip` feature enabled
-/// - `define: <name> ["value"]` - Define the preprocessor macro `<name>` as `value`
-/// - `optimize: <level>` - Specify optimization level. Supported values are: `zero`, `size`, and
-///   `performance`.  If omitted, will default to `performance`.
-/// - `target: <target>` - Specify target environment. Supported values: `vulkan1_0`, `vulkan1_1`,
-///   `vulkan1_2`. Defaults to `vulkan1_0`.
-#[proc_macro]
-pub fn include_glsl(tokens: TokenStream) -> TokenStream {
-    let IncludeGlsl(output) = parse_macro_input!(tokens as IncludeGlsl);
-    output.expand()
-}
+    fn compile(&mut self) {
+        // TODO this function is duplicated from the proc macro crate
+        let src_path = Some(Path::new(self.paths[0].0));
+        let path_str = src_path.map(|x| x.to_string_lossy().into_owned());
+        let sources = RefCell::new(path_str.map(|x| vec![x]).unwrap_or_default());
 
-/// Compile inline GLSL source
-///
-/// ```
-/// use vk_shader_macros::glsl;
-/// const VERT: &[u32] = glsl! {
-///     version: 450, kind: vert, optimize: size, target: vulkan1_1,
-///     r#"
-/// #version 450
-///
-/// void main() {
-///     gl_Position = vec4(0);
-/// }
-/// "#
-/// };
-/// ```
-///
-/// Because the shader kind cannot be inferred from a file extension,
-/// you may need to specify it manually as the above example does or
-/// add it to the source code, e.g. `#pragma shader_stage(vertex)`.
-///
-/// Due to limitations of proc macros, includes are resolved relative to the crate root.
-///
-/// # Options
-///
-/// See the [`include_glsl!`] macro for a list of compile options.
-#[proc_macro]
-pub fn glsl(tokens: TokenStream) -> TokenStream {
-    let Glsl(output) = parse_macro_input!(tokens as Glsl);
-    output.expand()
+        let src = fs::read_to_string(self.paths[0].0).unwrap();
+        let src_name = self.paths[0].0;
+        let mut options = shaderc::CompileOptions::new().unwrap();
+        options.set_include_callback(|name, ty, src, _depth| {
+            let path = match ty {
+                shaderc::IncludeType::Relative => Path::new(src).parent().unwrap().join(name),
+                shaderc::IncludeType::Standard => {
+                    Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join(name)
+                }
+            };
+            let path_str = path.to_str().ok_or("non-unicode path")?.to_owned();
+            sources.borrow_mut().push(path_str.clone());
+            Ok(shaderc::ResolvedInclude {
+                resolved_name: path_str,
+                content: fs::read_to_string(path).map_err(|x| x.to_string())?,
+            })
+        });
+        if let Some(version) = self.build_options.version {
+            options.set_forced_version_profile(version, shaderc::GlslProfile::None);
+        }
+        for (name, value) in self.build_options.definitions {
+            options.add_macro_definition(name, value.as_ref().map(|x| &x[..]));
+        }
+        if self.build_options.debug {
+            options.set_generate_debug_info();
+        }
+        options.set_optimization_level(self.build_options.optimization);
+        options.set_target_env(
+            shaderc::TargetEnv::Vulkan,
+            self.build_options.target_version,
+        );
+
+        let kind = self
+            .build_options
+            .kind
+            .or_else(|| {
+                src_path.and_then(|x| {
+                    x.extension()
+                        .and_then(|x| x.to_str().and_then(extension_kind))
+                })
+            })
+            .unwrap_or(ShaderKind::InferFromSource);
+
+        static COMPILER: OnceLock<shaderc::Compiler> = OnceLock::new();
+        let compiler = COMPILER.get_or_init(|| shaderc::Compiler::new().unwrap());
+        let compilation_artifact =
+            compiler.compile_into_spirv(&src, kind, src_name, "main", Some(&options));
+
+        match compilation_artifact {
+            Ok(compilation_artifact) => {
+                self.data = Some(compilation_artifact.as_binary().into());
+            }
+            Err(error) => {
+                eprintln!("{error:?}");
+            }
+        }
+    }
 }

@@ -13,16 +13,16 @@ categories = ["rendering"]
 [badges]
 maintenance = { status = "actively-developed" }
 
-[lib]
-proc-macro = true
-
 [features]
-strip = [] # Omit debug info from generated SPIR-V by default
-default-optimize-zero = [] # Set default optimization level to zero for debugging
-build-from-source = ["shaderc/build-from-source"] # Force shaderc to be built from source
+strip = ["vk-shader-macros-impl/strip"] # Omit debug info from generated SPIR-V by default
+default-optimize-zero = ["vk-shader-macros-impl/default-optimize-zero"] # Set default optimization level to zero for debugging
+build-from-source = ["vk-shader-macros-impl/build-from-source"] # Force shaderc to be built from source
+hot-reloading = ["shaderc"] # TODO doesn't actually work yet
+default = ["hot-reloading"]
 
 [dependencies]
-syn = { version = "1.0.89", default-features = false, features = [ "parsing", "proc-macro", "derive" ] }
-quote = "1.0.17"
-proc-macro2 = "1.0.36"
-shaderc = "0.8.2"
+vk-shader-macros-impl = { version = "=0.2.8", path = "impl" }
+
+shaderc = { version = "0.8.2", optional = true }
+anyhow = "1.0.83"
+notify = "6.1.1"
