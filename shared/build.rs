@@ -7,6 +7,7 @@ use anyhow::{bail, Result};
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryInto;
 use std::hash::{Hash, Hasher};
+use std::sync::OnceLock;
 
 pub struct Output {
     pub sources: Vec<String>,
@@ -141,7 +142,8 @@ impl Builder {
             })
             .unwrap_or(shaderc::ShaderKind::InferFromSource);
 
-        let compiler = shaderc::Compiler::new().unwrap();
+        static COMPILER: OnceLock<shaderc::Compiler> = OnceLock::new();
+        let compiler = COMPILER.get_or_init(|| shaderc::Compiler::new().unwrap());
         let out = compiler.compile_into_spirv(&src, kind, &src_name, "main", Some(&options))?;
         if out.get_num_warnings() != 0 {
             bail!(out.get_warning_messages());
