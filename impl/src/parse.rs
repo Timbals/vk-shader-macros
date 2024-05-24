@@ -3,6 +3,7 @@ use crate::IncludeGlsl;
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens, TokenStreamExt};
 use shaderc::ShaderKind;
+use std::borrow::Cow;
 use std::fs;
 use std::time::SystemTime;
 use syn::parse::{Parse, ParseStream};
@@ -20,58 +21,6 @@ impl Output {
         };
         TokenStream::from(expanded)
     }
-}
-
-impl IncludeGlsl {
-    // pub fn expand(self) -> TokenStream {
-    //     let Self { output, builder } = self;
-    //     let output = output.expand();
-    //     let Builder {
-    //         src,
-    //         name,
-    //         path,
-    //         options,
-    //     } = builder;
-    //     let path = path.unwrap().canonicalize().unwrap();
-    //     let path = path.to_str().unwrap();
-    //
-    //     let BuildOptions {
-    //         kind,
-    //         version,
-    //         debug,
-    //         definitions,
-    //         optimization,
-    //         target_version,
-    //         unterminated,
-    //     } = options;
-    //     let kind = kind.map(kind_extension).flatten();
-    //     let optimization = serialize_optimization_level(optimization);
-    //     #[allow(unused_variables)] // false positive? with `quote!`
-    //     let definitions = definitions.iter().map(|(a, b)| quote!("(#a, #b)"));
-    //     let options = quote!(vk_shader_macros::build::BuildOptions {
-    //         kind: #kind,
-    //         version: #version,
-    //         debug: #debug,
-    //         definitions: vec![#(#definitions),*],
-    //         optmization: #optimization,
-    //         target_version: #target_version,
-    //         unterminated: #unterminated,
-    //     });
-    //     let builder = quote!(vk_shader_macros::build::Builder {
-    //         src: #src,
-    //         name: #name,
-    //         path: #path,
-    //         options: #options,
-    //     });
-    //
-    //     quote!(
-    //         ShaderData {
-    //             output: #output,
-    //             builder: #builder,
-    //         }
-    //     )
-    //     .into()
-    // }
 }
 
 impl Parse for BuildOptions {
@@ -110,9 +59,11 @@ impl Parse for BuildOptions {
                     let value = if input.peek(Token![,]) || input.is_empty() {
                         None
                     } else {
-                        Some(input.parse::<LitStr>()?.value())
+                        Some(Cow::Owned(input.parse::<LitStr>()?.value()))
                     };
-                    out.definitions.push((name.to_string(), value));
+                    out.definitions
+                        .to_mut()
+                        .push((Cow::Owned(name.to_string()), value));
                 }
                 "optimize" => {
                     input.parse::<Token![:]>()?;
@@ -215,20 +166,21 @@ impl ToTokens for BuildOptions {
         #[allow(unused_variables)] // false positive? with `quote!`
         let definitions = definitions.iter().map(|(a, b)| {
             let b = if let Some(b) = b.as_ref() {
-                quote!(Some(#b))
+                quote!(Some(::std::borrow::Cow::Borrowed(#b)))
             } else {
                 quote!(None)
             };
-            quote!((#a, #b))
+            quote!((::std::borrow::Cow::Borrowed(#a), #b))
         });
 
         tokens.append_all(quote!(::vk_shader_macros::BuildOptions {
             kind: #kind,
             version: #version,
             debug: #debug,
-            definitions: &[#(#definitions),*],
+            definitions: ::std::borrow::Cow::Borrowed(&[#(#definitions),*]),
             optimization: #optimization,
             target_version: #target_version,
+            unterminated: false,
         }))
     }
 }

@@ -1,20 +1,19 @@
-use crate::build::extension_kind;
+pub use build::BuildOptions;
+use build::Builder;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use std::borrow::{Cow, ToOwned};
-use std::cell::RefCell;
+use std::borrow::Cow;
+use std::fs;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
-use std::{env, fs};
 pub use vk_shader_macros_impl::*;
-
-#[path = "../impl/src/build.rs"]
-pub mod build; // TODO code duplication
-
 // TODO hide from public API
 pub use shaderc::{OptimizationLevel, ShaderKind};
+
+#[path = "../shared/build.rs"]
+mod build;
 
 static DIRTY: AtomicBool = AtomicBool::new(false);
 
@@ -43,16 +42,6 @@ pub struct ShaderDataInner {
     pub initialized: bool,
 
     pub build_options: BuildOptions,
-}
-
-#[derive(Clone)]
-pub struct BuildOptions {
-    pub kind: Option<ShaderKind>,
-    pub version: Option<u32>,
-    pub debug: bool,
-    pub definitions: &'static [(&'static str, Option<&'static str>)],
-    pub optimization: OptimizationLevel,
-    pub target_version: u32,
 }
 
 impl ShaderData {
@@ -99,66 +88,21 @@ impl ShaderDataInner {
     }
 
     fn compile(&mut self) {
-        // TODO this function is duplicated from the proc macro crate
-        let src_path = Some(Path::new(self.paths[0].0));
-        let path_str = src_path.map(|x| x.to_string_lossy().into_owned());
-        let sources = RefCell::new(path_str.map(|x| vec![x]).unwrap_or_default());
-
-        let src = fs::read_to_string(self.paths[0].0).unwrap();
+        let src_path = Path::new(self.paths[0].0);
         let src_name = self.paths[0].0;
-        let mut options = shaderc::CompileOptions::new().unwrap();
-        options.set_include_callback(|name, ty, src, _depth| {
-            let path = match ty {
-                shaderc::IncludeType::Relative => Path::new(src).parent().unwrap().join(name),
-                shaderc::IncludeType::Standard => {
-                    Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join(name)
-                }
-            };
-            let path_str = path.to_str().ok_or("non-unicode path")?.to_owned();
-            sources.borrow_mut().push(path_str.clone());
-            Ok(shaderc::ResolvedInclude {
-                resolved_name: path_str,
-                content: fs::read_to_string(path).map_err(|x| x.to_string())?,
-            })
-        });
-        if let Some(version) = self.build_options.version {
-            options.set_forced_version_profile(version, shaderc::GlslProfile::None);
-        }
-        for (name, value) in self.build_options.definitions {
-            options.add_macro_definition(name, value.as_ref().map(|x| &x[..]));
-        }
-        if self.build_options.debug {
-            options.set_generate_debug_info();
-        }
-        options.set_optimization_level(self.build_options.optimization);
-        options.set_target_env(
-            shaderc::TargetEnv::Vulkan,
-            self.build_options.target_version,
-        );
-
-        let kind = self
-            .build_options
-            .kind
-            .or_else(|| {
-                src_path.and_then(|x| {
-                    x.extension()
-                        .and_then(|x| x.to_str().and_then(extension_kind))
-                })
-            })
-            .unwrap_or(ShaderKind::InferFromSource);
-
-        static COMPILER: OnceLock<shaderc::Compiler> = OnceLock::new();
-        let compiler = COMPILER.get_or_init(|| shaderc::Compiler::new().unwrap());
-        let compilation_artifact =
-            compiler.compile_into_spirv(&src, kind, src_name, "main", Some(&options));
-
-        match compilation_artifact {
-            Ok(compilation_artifact) => {
-                self.data = Some(compilation_artifact.as_binary().into());
+        let src = fs::read_to_string(src_path).unwrap();
+        let builder = Builder {
+            src,
+            name: src_name.to_string(),
+            path: Some(src_path.to_path_buf()),
+            options: self.build_options.clone(),
+        };
+        match builder.build() {
+            Ok(output) => {
+                self.data = Some(output.spv);
+                // TODO update sources
             }
-            Err(error) => {
-                eprintln!("{error:?}");
-            }
+            Err(error) => eprintln!("{error:?}"),
         }
     }
 }

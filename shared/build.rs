@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::{env, fs, mem, str};
@@ -17,7 +18,14 @@ pub struct BuildOptions {
     pub kind: Option<shaderc::ShaderKind>,
     pub version: Option<u32>,
     pub debug: bool,
-    pub definitions: Vec<(String, Option<String>)>,
+    /// When parsing build options in the proc macro,
+    /// the definitions could have the `Vec<(String, Option<String>)>` type.
+    /// But when outputting the [`BuildOptions`] as a constant,
+    /// the type is `&'static [(&'static str, Option<&'static str>)]`,
+    /// because there are allocations in constants.
+    /// Using [`Cow`] combines both these types.
+    #[allow(clippy::type_complexity)]
+    pub definitions: Cow<'static, [(Cow<'static, str>, Option<Cow<'static, str>>)]>,
     pub optimization: shaderc::OptimizationLevel,
     pub target_version: u32,
 
@@ -41,7 +49,7 @@ impl Default for BuildOptions {
             kind: None,
             version: None,
             debug: !cfg!(feature = "strip"),
-            definitions: Vec::new(),
+            definitions: Cow::default(),
             optimization: if cfg!(feature = "default-optimize-zero") {
                 shaderc::OptimizationLevel::Zero
             } else {
@@ -117,8 +125,8 @@ impl Builder {
         if let Some(version) = build_options.version {
             options.set_forced_version_profile(version, shaderc::GlslProfile::None);
         }
-        for (name, value) in build_options.definitions {
-            options.add_macro_definition(&name, value.as_ref().map(|x| &x[..]));
+        for (name, value) in &*build_options.definitions {
+            options.add_macro_definition(name, value.as_ref().map(|x| &x[..]));
         }
         if build_options.debug {
             options.set_generate_debug_info();

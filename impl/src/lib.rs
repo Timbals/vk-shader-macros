@@ -1,5 +1,6 @@
 extern crate proc_macro;
 
+#[path = "../../shared/build.rs"]
 mod build;
 mod parse;
 
