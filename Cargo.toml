@@ -17,11 +17,10 @@ maintenance = { status = "actively-developed" }
 strip = ["vk-shader-macros-impl/strip"] # Omit debug info from generated SPIR-V by default
 default-optimize-zero = ["vk-shader-macros-impl/default-optimize-zero"] # Set default optimization level to zero for debugging
 build-from-source = ["vk-shader-macros-impl/build-from-source"] # Force shaderc to be built from source
-hot-reloading = ["shaderc", "notify", "anyhow", "vk-shader-macros-impl/hot-reloading"]
+hot-reloading = ["shaderc", "notify", "vk-shader-macros-impl/hot-reloading"]
 
 [dependencies]
 vk-shader-macros-impl = { version = "=0.2.8", path = "impl" }
 
 shaderc = { version = "0.8.2", optional = true }
 notify = { version = "6.1.1", optional = true }
-anyhow = { version = "1.0.83", optional = true }

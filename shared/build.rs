@@ -1,13 +1,12 @@
+use shaderc::Result;
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
-use std::{env, fs, mem, str};
-
-use anyhow::{bail, Result};
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryInto;
 use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::{env, fs, mem, str};
 
 pub struct Output {
     pub sources: Vec<String>,
@@ -146,7 +145,7 @@ impl Builder {
         let compiler = COMPILER.get_or_init(|| shaderc::Compiler::new().unwrap());
         let out = compiler.compile_into_spirv(&src, kind, &src_name, "main", Some(&options))?;
         if out.get_num_warnings() != 0 {
-            bail!(out.get_warning_messages());
+            return Err(shaderc::Error::InternalError(out.get_warning_messages()));
         }
         mem::drop(options);
 

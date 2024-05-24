@@ -27,4 +27,3 @@ syn = { version = "1.0.89", default-features = false, features = ["parsing", "pr
 quote = "1.0.17"
 proc-macro2 = "1.0.36"
 shaderc = "0.8.2"
-anyhow = "1.0.83"
