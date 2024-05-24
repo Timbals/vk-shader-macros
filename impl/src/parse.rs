@@ -92,10 +92,9 @@ impl Parse for BuildOptions {
                 }
             }
 
-            if input.peek(Token![,]) {
+            if input.peek(Token![,]) && input.peek2(Ident) {
                 input.parse::<Token![,]>()?;
             } else {
-                out.unterminated = true;
                 break;
             }
         }
@@ -180,7 +179,6 @@ impl ToTokens for BuildOptions {
             definitions: ::std::borrow::Cow::Borrowed(&[#(#definitions),*]),
             optimization: #optimization,
             target_version: #target_version,
-            unterminated: false,
         }))
     }
 }

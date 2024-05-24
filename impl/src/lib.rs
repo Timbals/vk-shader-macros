@@ -52,11 +52,13 @@ struct Glsl(Output);
 
 impl Parse for Glsl {
     fn parse(input: ParseStream) -> Result<Self> {
-        let options = input.parse::<BuildOptions>()?;
-
-        if options.unterminated {
+        let options = if !input.peek(LitStr) {
+            let build_options = input.parse::<BuildOptions>()?;
             input.parse::<Token![,]>()?;
-        }
+            build_options
+        } else {
+            BuildOptions::default()
+        };
 
         let src_lit = input.parse::<LitStr>()?;
         let src = src_lit.value();

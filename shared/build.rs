@@ -28,8 +28,6 @@ pub struct BuildOptions {
     pub definitions: Cow<'static, [(Cow<'static, str>, Option<Cow<'static, str>>)]>,
     pub optimization: shaderc::OptimizationLevel,
     pub target_version: u32,
-
-    pub unterminated: bool,
 }
 
 impl Hash for BuildOptions {
@@ -56,7 +54,6 @@ impl Default for BuildOptions {
                 shaderc::OptimizationLevel::Performance
             },
             target_version: 1 << 22,
-            unterminated: false,
         }
     }
 }
