@@ -81,8 +81,8 @@ impl Parse for Glsl {
 /// Compile a GLSL source file into a binary SPIR-V constant
 ///
 /// ```
-/// use vk_shader_macros::include_glsl;
-/// const VERT: &[u32] = include_glsl!("example.vert");
+/// use vk_shader_macros::{include_glsl, ShaderData};
+/// static VERT: ShaderData = include_glsl!("example.vert");
 /// ```
 ///
 /// Due to limitations of proc macros, paths are resolved relative to the crate root.

@@ -1,4 +1,5 @@
-use vk_shader_macros::*;
+use vk_shader_macros::{include_glsl, ShaderData};
 
 #[allow(dead_code)]
-const TEST: &[u32] = include_glsl!("example.vert", version: 450, optimize: size, target: vulkan1_1);
+static TEST: ShaderData =
+    include_glsl!("example.vert", version: 450, optimize: size, target: vulkan1_1);
