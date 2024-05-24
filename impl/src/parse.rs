@@ -114,29 +114,37 @@ impl ToTokens for IncludeGlsl {
                 },
         } = self;
 
-        let paths = sources.iter().map(|source| {
-            let modified = fs::metadata(source)
-                .unwrap()
-                .modified()
-                .unwrap()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap();
-            let secs = modified.as_secs();
-            let nanos = modified.subsec_nanos();
-            quote!((#source, std::time::Duration::new(#secs, #nanos)))
-        });
+        let hot_reloading_data = if cfg!(feature = "hot-reloading") {
+            let paths = sources.iter().map(|source| {
+                let modified = fs::metadata(source)
+                    .unwrap()
+                    .modified()
+                    .unwrap()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap();
+                let secs = modified.as_secs();
+                let nanos = modified.subsec_nanos();
+                quote!((#source, std::time::Duration::new(#secs, #nanos)))
+            });
+
+            quote!(
+                inner: std::sync::Mutex::new(::vk_shader_macros::ShaderDataInner {
+                    data: None,
+                    paths: &[#(#paths),*],
+                    initialized: false,
+                    build_options: #build_options,
+                })
+            )
+        } else {
+            TokenStream::default()
+        };
 
         tokens.append_all(quote!(
             {
                 #({ const _FORCE_DEP: &[u8] = include_bytes!(#sources); })*
                 ::vk_shader_macros::ShaderData {
-                    inner: std::sync::Mutex::new(::vk_shader_macros::ShaderDataInner {
-                        compile_time_spv: &[#(#spv),*],
-                        data: None,
-                        paths: &[#(#paths),*],
-                        initialized: false,
-                        build_options: #build_options,
-                    })
+                    compile_time_spv: &[#(#spv),*],
+                    #hot_reloading_data
                 }
             }
         ))
