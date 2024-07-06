@@ -82,7 +82,7 @@ impl Parse for BuildOptions {
 
                     let value = input.parse::<Ident>()?;
                     if let Some(version) = target(&value.to_string()) {
-                        out.target_version = version;
+                        out.target_version = version as u32;
                     } else {
                         return Err(syn::Error::new(value.span(), "unknown target").into());
                     }
@@ -247,11 +247,11 @@ pub(crate) fn optimization_level(level: &str) -> Option<shaderc::OptimizationLev
     }
 }
 
-pub(crate) fn target(s: &str) -> Option<u32> {
+pub(crate) fn target(s: &str) -> Option<shaderc::EnvVersion> {
     Some(match s {
-        "vulkan" | "vulkan1_0" => 1 << 22,
-        "vulkan1_1" => 1 << 22 | 1 << 12,
-        "vulkan1_2" => 1 << 22 | 2 << 12,
+        "vulkan" | "vulkan1_0" => shaderc::EnvVersion::Vulkan1_0,
+        "vulkan1_1" => shaderc::EnvVersion::Vulkan1_1,
+        "vulkan1_2" => shaderc::EnvVersion::Vulkan1_2,
         _ => return None,
     })
 }

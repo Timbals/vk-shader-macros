@@ -53,7 +53,7 @@ impl Default for BuildOptions {
             } else {
                 shaderc::OptimizationLevel::Performance
             },
-            target_version: 1 << 22,
+            target_version: shaderc::EnvVersion::Vulkan1_0 as u32,
         }
     }
 }
