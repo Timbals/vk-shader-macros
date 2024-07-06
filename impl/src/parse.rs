@@ -252,6 +252,7 @@ pub(crate) fn target(s: &str) -> Option<shaderc::EnvVersion> {
         "vulkan" | "vulkan1_0" => shaderc::EnvVersion::Vulkan1_0,
         "vulkan1_1" => shaderc::EnvVersion::Vulkan1_1,
         "vulkan1_2" => shaderc::EnvVersion::Vulkan1_2,
+        "vulkan1_3" => shaderc::EnvVersion::Vulkan1_3,
         _ => return None,
     })
 }
