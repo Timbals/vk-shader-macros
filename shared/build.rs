@@ -53,7 +53,15 @@ impl Default for BuildOptions {
             } else {
                 shaderc::OptimizationLevel::Performance
             },
-            target_version: shaderc::EnvVersion::Vulkan1_0 as u32,
+            target_version: if cfg!(feature = "default-version-vulkan1_3") {
+                shaderc::EnvVersion::Vulkan1_3
+            } else if cfg!(feature = "default-version-vulkan1_2") {
+                shaderc::EnvVersion::Vulkan1_2
+            } else if cfg!(feature = "default-version-vulkan1_1") {
+                shaderc::EnvVersion::Vulkan1_1
+            } else {
+                shaderc::EnvVersion::Vulkan1_0
+            } as u32,
         }
     }
 }
