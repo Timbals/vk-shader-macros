@@ -138,6 +138,7 @@ impl Builder {
         }
         options.set_optimization_level(build_options.optimization);
         options.set_target_env(shaderc::TargetEnv::Vulkan, build_options.target_version);
+        options.set_auto_bind_uniforms(true);
 
         let kind = build_options
             .kind
