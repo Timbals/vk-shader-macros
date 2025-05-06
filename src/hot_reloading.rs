@@ -94,7 +94,7 @@ impl ShaderDataInner {
                 self.data = Some(output.spv);
                 // TODO update sources
             }
-            Err(error) => eprintln!("{error:?}"),
+            Err(error) => eprintln!("{error}"),
         }
     }
 }
