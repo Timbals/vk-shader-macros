@@ -26,9 +26,10 @@ hot-reloading = []
 default-version-vulkan1_1 = [] # Set default target version to Vulkan 1.1 (SPIR-V 1.3)
 default-version-vulkan1_2 = [] # Set default target version to Vulkan 1.2 (SPIR-V 1.5)
 default-version-vulkan1_3 = [] # Set default target version to Vulkan 1.3 (SPIR-V 1.6)
+default-version-vulkan1_4 = [] # Set default target version to Vulkan 1.4 (SPIR-V 1.6)
 
 [dependencies]
 syn = { version = "2.0.0", default-features = false, features = ["parsing", "proc-macro", "derive", "printing"] }
 quote = "1.0.17"
 proc-macro2 = "1.0.36"
-shaderc = "0.8.3"
+shaderc = "0.9.1"

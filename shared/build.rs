@@ -53,7 +53,9 @@ impl Default for BuildOptions {
             } else {
                 shaderc::OptimizationLevel::Performance
             },
-            target_version: if cfg!(feature = "default-version-vulkan1_3") {
+            target_version: if cfg!(feature = "default-version-vulkan1_4") {
+                shaderc::EnvVersion::Vulkan1_4
+            } else if cfg!(feature = "default-version-vulkan1_3") {
                 shaderc::EnvVersion::Vulkan1_3
             } else if cfg!(feature = "default-version-vulkan1_2") {
                 shaderc::EnvVersion::Vulkan1_2

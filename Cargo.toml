@@ -23,9 +23,10 @@ hot-reloading = ["shaderc", "notify", "vk-shader-macros-impl/hot-reloading"]
 default-version-vulkan1_1 = ["vk-shader-macros-impl/default-version-vulkan1_1"] # Set default target version to Vulkan 1.1 (SPIR-V 1.3)
 default-version-vulkan1_2 = ["vk-shader-macros-impl/default-version-vulkan1_2"] # Set default target version to Vulkan 1.2 (SPIR-V 1.5)
 default-version-vulkan1_3 = ["vk-shader-macros-impl/default-version-vulkan1_3"] # Set default target version to Vulkan 1.3 (SPIR-V 1.6)
+default-version-vulkan1_4 = ["vk-shader-macros-impl/default-version-vulkan1_4"] # Set default target version to Vulkan 1.3 (SPIR-V 1.6)
 
 [dependencies]
 vk-shader-macros-impl = { version = "=0.2.8", path = "impl" }
 
-shaderc = { version = "0.8.3", optional = true }
-notify = { version = "6.1.1", optional = true }
+shaderc = { version = "0.9.1", optional = true }
+notify = { version = ">=6.1.1, <=8.0.0", optional = true }
