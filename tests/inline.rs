@@ -16,6 +16,21 @@ void main() {
 };
 
 #[allow(dead_code)]
+const RELATIVE_INCLUDE: &[u32] = glsl! {
+    r#"
+#version 450
+#pragma shader_stage(vertex)
+
+// Relative include (resolved from the macro invocation)
+#include "test.glsl"
+
+void main() {
+    gl_Position = test(gl_Position);
+}
+"#
+};
+
+#[allow(dead_code)]
 const NO_OPTIONS: &[u32] = glsl! {
     r#"
 #version 450

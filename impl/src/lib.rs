@@ -4,8 +4,7 @@ extern crate proc_macro;
 mod build;
 mod parse;
 
-use std::path::Path;
-use std::{env, fs};
+use std::fs;
 
 use proc_macro::TokenStream;
 use quote::ToTokens;
@@ -22,8 +21,15 @@ struct IncludeGlsl {
 impl Parse for IncludeGlsl {
     fn parse(input: ParseStream) -> Result<Self> {
         let path_lit = input.parse::<LitStr>()?;
-        let path = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join(&path_lit.value());
-        let path_str = path.to_string_lossy();
+
+        // resolve path relative to the file of the proc macro invocation
+        let local_file = proc_macro::Span::call_site().local_file().unwrap();
+        let local_dir = local_file.parent().unwrap();
+
+        let path = local_dir.join(path_lit.value());
+        let path = path
+            .canonicalize()
+            .map_err(|e| syn::Error::new(path_lit.span(), e))?;
 
         let src = fs::read_to_string(&path).map_err(|e| syn::Error::new(path_lit.span(), e))?;
 
@@ -34,12 +40,7 @@ impl Parse for IncludeGlsl {
             BuildOptions::default()
         };
 
-        let builder = Builder {
-            src,
-            name: path_str.into_owned(),
-            path: Some(path),
-            options,
-        };
+        let builder = Builder { src, path, options };
         builder
             .clone()
             .build()
@@ -63,16 +64,17 @@ impl Parse for Glsl {
         let src_lit = input.parse::<LitStr>()?;
         let src = src_lit.value();
 
+        let path = proc_macro::Span::call_site()
+            .local_file()
+            .unwrap()
+            .canonicalize()
+            .unwrap();
+
         if input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
         }
 
-        let builder = Builder {
-            src,
-            name: "inline".to_owned(),
-            path: None,
-            options,
-        };
+        let builder = Builder { src, path, options };
         builder
             .build()
             .map_err(|e| syn::Error::new(src_lit.span(), e))
@@ -87,7 +89,7 @@ impl Parse for Glsl {
 /// static VERT: ShaderData = include_glsl!("example.vert");
 /// ```
 ///
-/// Due to limitations of proc macros, paths are resolved relative to the crate root.
+/// The path is resolved relative to the current file.
 ///
 /// # Options
 ///
@@ -130,8 +132,6 @@ pub fn include_glsl(tokens: TokenStream) -> TokenStream {
 /// Because the shader kind cannot be inferred from a file extension,
 /// you may need to specify it manually as the above example does or
 /// add it to the source code, e.g. `#pragma shader_stage(vertex)`.
-///
-/// Due to limitations of proc macros, includes are resolved relative to the crate root.
 ///
 /// # Options
 ///

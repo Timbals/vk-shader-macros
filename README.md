@@ -7,10 +7,6 @@
 
 A procedural macro for compiling GLSL into SPIR-V constants.
 
-Unlike the standard `include_bytes` macro, paths are currently
-resolved relative to crate root. This is due to a temporary limitation
-in the procedural macro API.
-
 ## Examples
 
 ```rust

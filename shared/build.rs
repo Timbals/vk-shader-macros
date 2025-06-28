@@ -71,8 +71,7 @@ impl Default for BuildOptions {
 #[derive(Clone)]
 pub struct Builder {
     pub src: String,
-    pub name: String,
-    pub path: Option<PathBuf>,
+    pub path: PathBuf,
     pub options: BuildOptions,
 }
 
@@ -80,13 +79,12 @@ impl Builder {
     pub fn build(self) -> Result<Output> {
         let Self {
             src,
-            name: src_name,
             path: src_path,
             options: build_options,
         } = self;
 
-        let path_str = src_path.clone().map(|x| x.to_string_lossy().into_owned());
-        let sources = RefCell::new(path_str.map(|x| vec![x]).unwrap_or_else(Vec::new));
+        let path_str = src_path.to_string_lossy().into_owned();
+        let sources = RefCell::new(vec![path_str.clone()]);
 
         // compute a hash over the source code and the build options
         let mut hasher = DefaultHasher::new();
@@ -145,16 +143,15 @@ impl Builder {
         let kind = build_options
             .kind
             .or_else(|| {
-                src_path.and_then(|x| {
-                    x.extension()
-                        .and_then(|x| x.to_str().and_then(extension_kind))
-                })
+                src_path
+                    .extension()
+                    .and_then(|x| x.to_str().and_then(extension_kind))
             })
             .unwrap_or(shaderc::ShaderKind::InferFromSource);
 
         static COMPILER: OnceLock<shaderc::Compiler> = OnceLock::new();
         let compiler = COMPILER.get_or_init(|| shaderc::Compiler::new().unwrap());
-        let out = compiler.compile_into_spirv(&src, kind, &src_name, "main", Some(&options))?;
+        let out = compiler.compile_into_spirv(&src, kind, &path_str, "main", Some(&options))?;
         if out.get_num_warnings() != 0 {
             return Err(shaderc::Error::InternalError(out.get_warning_messages()));
         }
