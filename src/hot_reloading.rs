@@ -81,18 +81,16 @@ impl ShaderDataInner {
 
     fn compile(&mut self) {
         let src_path = Path::new(self.paths[0].0);
-        let src_name = self.paths[0].0;
         let src = fs::read_to_string(src_path).unwrap();
         let builder = build::Builder {
             src,
-            name: src_name.to_string(),
-            path: Some(src_path.to_path_buf()),
+            path: src_path.to_path_buf(),
             options: self.build_options.clone(),
         };
         match builder.build() {
             Ok(output) => {
                 self.data = Some(output.spv);
-                // TODO update sources
+                // TODO update sources and remove `#[allow(dead_code)]` on `output.sources`
             }
             Err(error) => eprintln!("{error}"),
         }

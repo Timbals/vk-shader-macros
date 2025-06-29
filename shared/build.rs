@@ -9,6 +9,7 @@ use std::sync::OnceLock;
 use std::{env, fs, mem, str};
 
 pub struct Output {
+    #[allow(dead_code)]
     pub sources: Vec<String>,
     pub spv: Vec<u32>,
 }

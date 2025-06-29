@@ -18,7 +18,7 @@ fn create_pipelines() {
     // returns `impl Deref<Target = [u32]>`
     let vertex_data = VERT.data();
 
-    // bypass runtime compilation when the `hot-reloading` is enabled
+    // bypass runtime compilation when the `hot-reloading` feature is enabled
     let vertex_data: &'static [u32] = VERT.compile_time_spv;
 }
 ```
