@@ -1,9 +1,6 @@
 use shaderc::Result;
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::hash_map::DefaultHasher;
-use std::convert::TryInto;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::{env, fs, mem, str};
@@ -32,17 +29,6 @@ pub struct BuildOptions {
     pub definitions: Cow<'static, [(Cow<'static, str>, Option<Cow<'static, str>>)]>,
     pub optimization: shaderc::OptimizationLevel,
     pub target_version: u32,
-}
-
-impl Hash for BuildOptions {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.kind.map(|kind| mem::discriminant(&kind)).hash(state);
-        self.version.hash(state);
-        self.debug.hash(state);
-        self.definitions.hash(state);
-        mem::discriminant(&self.optimization).hash(state);
-        self.target_version.hash(state);
-    }
 }
 
 impl Default for BuildOptions {
@@ -90,34 +76,6 @@ impl Builder {
         let path_str = src_path.to_string_lossy().into_owned();
         let sources = RefCell::new(vec![path_str.clone()]);
 
-        // compute a hash over the source code and the build options
-        let mut hasher = DefaultHasher::new();
-        src.hash(&mut hasher);
-        build_options.hash(&mut hasher);
-        let hash = hasher.finish();
-
-        let path = option_env!("OUT_DIR").map(|out_dir| Path::new(out_dir).join(hash.to_string()));
-
-        if let Some(path) = &path {
-            let data = fs::read(path);
-
-            // check if a cached compilation exists
-            if let Ok(data) = data {
-                assert_eq!(0, data.len() % 4);
-                let spv = data
-                    .chunks_exact(4)
-                    .map(|chunk| u32::from_ne_bytes(chunk.try_into().unwrap()))
-                    .collect::<Vec<_>>();
-
-                return Ok(Output {
-                    sources: sources.into_inner(),
-                    spv,
-                    #[cfg(feature = "reflection")]
-                    entry_points: Vec::new(), // TODO
-                });
-            }
-        }
-
         let mut options = shaderc::CompileOptions::new().unwrap();
         options.set_include_callback(|name, ty, src, _depth| {
             let path = match ty {
@@ -162,11 +120,6 @@ impl Builder {
             return Err(shaderc::Error::InternalError(out.get_warning_messages()));
         }
         mem::drop(options);
-
-        if let Some(path) = path {
-            // Write out the compilation result for caching
-            let _ = fs::write(path, out.as_binary_u8());
-        }
 
         #[cfg(feature = "reflection")]
         let entry_points = spirq::ReflectConfig::new()
