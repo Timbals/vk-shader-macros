@@ -20,7 +20,7 @@ pub fn should_recompile() -> bool {
     DIRTY.swap(false, Ordering::AcqRel)
 }
 
-pub struct ShaderDataInner {
+pub struct HotReloadingData {
     /// Latest compiled SPIR-V
     pub data: Option<Vec<u32>>,
     /// All paths for dependencies of the shader.
@@ -38,12 +38,15 @@ pub struct ShaderDataInner {
 
 impl ShaderData {
     pub fn data(&self) -> impl Deref<Target = [u32]> {
-        self.inner.lock().unwrap().data(self.compile_time_spv)
+        self.hot_reloading
+            .as_ref()
+            .map(|x| x.lock().unwrap().data(self.compile_time_spv))
+            .unwrap_or(Cow::Borrowed(self.compile_time_spv))
     }
 }
 
-impl ShaderDataInner {
-    fn data(&mut self, compile_time_spv: &'static [u32]) -> impl Deref<Target = [u32]> {
+impl HotReloadingData {
+    fn data(&mut self, compile_time_spv: &'static [u32]) -> Cow<'static, [u32]> {
         if !self.initialized {
             self.initialized = true;
 

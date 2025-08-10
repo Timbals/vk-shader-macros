@@ -11,15 +11,34 @@ use syn::{Ident, LitInt, LitStr, Token};
 
 impl Output {
     pub fn expand(self) -> TokenStream {
-        let Self { sources, spv } = self;
+        let Self {
+            sources,
+            spv,
+            #[cfg(feature = "reflection")]
+            entry_points,
+        } = self;
 
-        let expanded = quote! {
+        let hot_reloading_data = if cfg!(feature = "hot-reloading") {
+            quote!(hot_reloading: None,)
+        } else {
+            TokenStream::default()
+        };
+
+        #[cfg(feature = "reflection")]
+        let reflection_data = reflection_data(&entry_points);
+        #[cfg(not(feature = "reflection"))]
+        let reflection_data = TokenStream::default();
+
+        quote!(
             {
                 #({ const _FORCE_DEP: &[u8] = include_bytes!(#sources); })*
-                &[#(#spv),*]
+                ::vk_shader_macros::ShaderData {
+                    compile_time_spv: &[#(#spv),*],
+                    #hot_reloading_data
+                    #reflection_data
+                }
             }
-        };
-        TokenStream::from(expanded)
+        )
     }
 }
 
@@ -106,7 +125,13 @@ impl Parse for BuildOptions {
 impl ToTokens for IncludeGlsl {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self {
-            output: Output { sources, spv },
+            output:
+                Output {
+                    sources,
+                    spv,
+                    #[cfg(feature = "reflection")]
+                    entry_points,
+                },
             builder:
                 Builder {
                     options: build_options,
@@ -128,16 +153,21 @@ impl ToTokens for IncludeGlsl {
             });
 
             quote!(
-                inner: std::sync::Mutex::new(::vk_shader_macros::ShaderDataInner {
+                hot_reloading: Some(std::sync::Mutex::new(::vk_shader_macros::HotReloadingData {
                     data: None,
                     paths: &[#(#paths),*],
                     initialized: false,
                     build_options: #build_options,
-                })
+                })),
             )
         } else {
             TokenStream::default()
         };
+
+        #[cfg(feature = "reflection")]
+        let reflection_data = reflection_data(entry_points);
+        #[cfg(not(feature = "reflection"))]
+        let reflection_data = TokenStream::default();
 
         tokens.append_all(quote!(
             {
@@ -145,6 +175,7 @@ impl ToTokens for IncludeGlsl {
                 ::vk_shader_macros::ShaderData {
                     compile_time_spv: &[#(#spv),*],
                     #hot_reloading_data
+                    #reflection_data
                 }
             }
         ))
@@ -255,4 +286,86 @@ pub(crate) fn target(s: &str) -> Option<shaderc::EnvVersion> {
         "vulkan1_3" => shaderc::EnvVersion::Vulkan1_3,
         _ => return None,
     })
+}
+
+#[cfg(feature = "reflection")]
+fn reflection_data(entry_points: &Vec<spirq::entry_point::EntryPoint>) -> TokenStream {
+    use spirq::ty::{ScalarType, Type};
+    use spirq::var::Variable;
+
+    // TODO support multiple entry points
+    let mut spec_constants = entry_points[0]
+        .vars
+        .iter()
+        .filter(|var| matches!(var, Variable::SpecConstant { .. }))
+        .collect::<Vec<_>>();
+    spec_constants.sort_unstable_by_key(|var| {
+        let Variable::SpecConstant { spec_id, .. } = var else {
+            unreachable!()
+        };
+        *spec_id
+    });
+
+    let mut specialization_constants = Vec::new();
+    for spec_constant in spec_constants {
+        let Variable::SpecConstant { spec_id, ty, .. } = spec_constant else {
+            unreachable!()
+        };
+
+        let discriminant = match ty {
+            Type::Scalar(ScalarType::Boolean) => {
+                quote!(&::vk_shader_macros::SpecializationConstant::Bool(false))
+            }
+            Type::Scalar(ScalarType::Integer {
+                bits: 8,
+                is_signed: true,
+            }) => quote!(&::vk_shader_macros::SpecializationConstant::I8(0)),
+            Type::Scalar(ScalarType::Integer {
+                bits: 16,
+                is_signed: true,
+            }) => quote!(&::vk_shader_macros::SpecializationConstant::I16(0)),
+            Type::Scalar(ScalarType::Integer {
+                bits: 32,
+                is_signed: true,
+            }) => quote!(&::vk_shader_macros::SpecializationConstant::I32(0)),
+            Type::Scalar(ScalarType::Integer {
+                bits: 64,
+                is_signed: true,
+            }) => quote!(&::vk_shader_macros::SpecializationConstant::I64(0)),
+            Type::Scalar(ScalarType::Integer {
+                bits: 8,
+                is_signed: false,
+            }) => quote!(&::vk_shader_macros::SpecializationConstant::U8(0)),
+            Type::Scalar(ScalarType::Integer {
+                bits: 16,
+                is_signed: false,
+            }) => quote!(&::vk_shader_macros::SpecializationConstant::U16(0)),
+            Type::Scalar(ScalarType::Integer {
+                bits: 32,
+                is_signed: false,
+            }) => quote!(&::vk_shader_macros::SpecializationConstant::U32(0)),
+            Type::Scalar(ScalarType::Integer {
+                bits: 64,
+                is_signed: false,
+            }) => quote!(&::vk_shader_macros::SpecializationConstant::U64(0)),
+            Type::Scalar(ScalarType::Float { bits: 16 }) => {
+                quote!(&::vk_shader_macros::SpecializationConstant::F16(0))
+            }
+            Type::Scalar(ScalarType::Float { bits: 32 }) => {
+                quote!(&::vk_shader_macros::SpecializationConstant::F32(0.0))
+            }
+            Type::Scalar(ScalarType::Float { bits: 64 }) => {
+                quote!(&::vk_shader_macros::SpecializationConstant::F64(0.0))
+            }
+            _ => unimplemented!(),
+        };
+
+        specialization_constants.push(quote!((#spec_id, ::std::mem::discriminant(#discriminant))));
+    }
+
+    quote!(
+        reflection: ::vk_shader_macros::ReflectionData {
+            specialization_constants: &[#(#specialization_constants),*],
+        },
+    )
 }

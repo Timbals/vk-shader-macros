@@ -1,7 +1,7 @@
 use vk_shader_macros::*;
 
 #[allow(dead_code)]
-const TEST: &[u32] = glsl! {
+static TEST: ShaderData = glsl! {
     version: 450, kind: vert, optimize: size, target: vulkan1_1,
     r#"
 #version 450
@@ -16,7 +16,7 @@ void main() {
 };
 
 #[allow(dead_code)]
-const RELATIVE_INCLUDE: &[u32] = glsl! {
+static RELATIVE_INCLUDE: ShaderData = glsl! {
     r#"
 #version 450
 #pragma shader_stage(vertex)
@@ -31,7 +31,7 @@ void main() {
 };
 
 #[allow(dead_code)]
-const NO_OPTIONS: &[u32] = glsl! {
+static NO_OPTIONS: ShaderData = glsl! {
     r#"
 #version 450
 #pragma shader_stage(vertex)

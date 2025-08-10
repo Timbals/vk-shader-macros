@@ -12,6 +12,9 @@ pub struct Output {
     #[allow(dead_code)]
     pub sources: Vec<String>,
     pub spv: Vec<u32>,
+    #[allow(dead_code)]
+    #[cfg(feature = "reflection")]
+    pub entry_points: Vec<spirq::entry_point::EntryPoint>,
 }
 
 #[derive(Clone)]
@@ -109,6 +112,8 @@ impl Builder {
                 return Ok(Output {
                     sources: sources.into_inner(),
                     spv,
+                    #[cfg(feature = "reflection")]
+                    entry_points: Vec::new(), // TODO
                 });
             }
         }
@@ -163,9 +168,19 @@ impl Builder {
             let _ = fs::write(path, out.as_binary_u8());
         }
 
+        #[cfg(feature = "reflection")]
+        let entry_points = spirq::ReflectConfig::new()
+            .spv(out.as_binary())
+            .ref_all_rscs(true)
+            .gen_unique_names(true)
+            .reflect()
+            .unwrap();
+
         Ok(Output {
             sources: sources.into_inner(),
             spv: out.as_binary().into(),
+            #[cfg(feature = "reflection")]
+            entry_points,
         })
     }
 }

@@ -22,6 +22,7 @@ strip = [] # Omit debug info from generated SPIR-V by default
 default-optimize-zero = [] # Set default optimization level to zero for debugging
 build-from-source = ["shaderc/build-from-source"] # Force shaderc to be built from source
 hot-reloading = []
+reflection = []
 
 # If multiple default-version features are enabled, the highest version will be used
 default-version-vulkan1_1 = [] # Set default target version to Vulkan 1.1 (SPIR-V 1.3)
@@ -34,3 +35,4 @@ syn = { version = "2.0.0", default-features = false, features = ["parsing", "pro
 quote = "1.0.17"
 proc-macro2 = "1.0.36"
 shaderc = "0.9.1"
+spirq = "1.2.2"

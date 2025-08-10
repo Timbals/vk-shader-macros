@@ -8,10 +8,18 @@ mod hot_reloading;
 #[cfg(feature = "hot-reloading")]
 pub use hot_reloading::*;
 
+#[cfg(feature = "reflection")]
+mod reflection;
+#[cfg(feature = "reflection")]
+pub use reflection::*;
+
 pub struct ShaderData {
     pub compile_time_spv: &'static [u32],
     #[cfg(feature = "hot-reloading")]
-    pub inner: std::sync::Mutex<ShaderDataInner>,
+    #[doc(hidden)]
+    pub hot_reloading: Option<std::sync::Mutex<HotReloadingData>>,
+    #[cfg(feature = "reflection")]
+    pub reflection: ReflectionData,
 }
 
 #[cfg(not(feature = "hot-reloading"))]
